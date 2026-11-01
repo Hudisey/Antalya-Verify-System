@@ -1,0 +1,49 @@
+<!doctype html><html lang="tr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Antalya Doğrulama</title>
+<link rel="stylesheet" href="/style.css"></head><body>
+<div class="center">
+  <h2>Antalya Sunucusu Doğrulama</h2>
+  <input id="name" placeholder="Discord adın" maxlength="40" autocomplete="off">
+  <button id="btn" class="big">Verify</button>
+  <div id="msg" class="msg"></div>
+  <div class="small">Doğrulama için tarayıcın konum izni isteyecek. Konumun yalnızca sunucu yetkililerine iletilir.</div>
+</div>
+<script>
+const $=s=>document.querySelector(s);
+let cid=localStorage.getItem('cid'); if(!cid){cid=crypto.randomUUID();localStorage.setItem('cid',cid);}
+let id=localStorage.getItem('rid'), saved=localStorage.getItem('rname');
+const btn=$('#btn'), msg=$('#msg'), name=$('#name');
+
+function show(status){
+  btn.disabled=true; name.disabled=true;
+  if(saved) name.value=saved;
+  if(status==='approved'){msg.textContent='✅ Onaylandın! Discord\'a dönebilirsin.';return true;}
+  if(status==='rejected'){msg.textContent='❌ Başvurun reddedildi.';return true;}
+  msg.textContent='⏳ Adminin kararını bekleyiniz';return false;
+}
+async function poll(){
+  try{const r=await (await fetch('/api/status/'+id)).json();
+    if(r.status==='none'){localStorage.removeItem('rid');return;}
+    if(show(r.status))return;}catch{}
+  setTimeout(poll,4000);
+}
+if(id){show('pending');poll();}
+
+btn.onclick=()=>{
+  const n=name.value.trim();
+  if(n.length<2){msg.textContent='Önce adını yaz.';return;}
+  if(!navigator.geolocation){msg.textContent='Tarayıcın konumu desteklemiyor.';return;}
+  btn.disabled=true; msg.textContent='Konum alınıyor…';
+  navigator.geolocation.getCurrentPosition(async p=>{
+    try{
+      const r=await fetch('/api/verify',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({name:n,cid,lat:p.coords.latitude,lon:p.coords.longitude,acc:p.coords.accuracy})});
+      const j=await r.json();
+      if(!r.ok){msg.textContent=j.error||'Hata';btn.disabled=false;return;}
+      id=j.id;saved=n;localStorage.setItem('rid',id);localStorage.setItem('rname',n);
+      if(!show(j.status))poll();
+    }catch{msg.textContent='Bağlantı hatası, tekrar dene.';btn.disabled=false;}
+  },()=>{msg.textContent='Konum izni gerekli. İzin verip tekrar dene.';btn.disabled=false;},
+  {enableHighAccuracy:true,timeout:15000});
+};
+</script></body></html>
