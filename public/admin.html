@@ -1,0 +1,84 @@
+<!doctype html><html lang="tr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Admin Paneli</title>
+<link rel="icon" href="/favicon.ico" sizes="any"><link rel="icon" type="image/png" href="/favicon.png">
+<link rel="stylesheet" href="/style.css"></head><body>
+<div id="login" class="center">
+  <h2>Panel Girişi</h2>
+  <input id="u" placeholder="Kullanıcı adı"><input id="p" type="password" placeholder="Şifre">
+  <button id="go">Giriş</button><div id="lmsg" class="msg"></div>
+</div>
+<div id="app" class="wrap" style="display:none">
+  <div class="bar"><h2 id="who"></h2><button class="gray" id="out">Çıkış</button></div>
+  <div class="row" style="margin:10px 0">
+    <button id="t1">Başvurular</button><button id="t2" class="gray">Moderatörler</button>
+  </div>
+  <div id="reqs"></div>
+  <div id="mods" style="display:none">
+    <div class="card"><b>Yeni moderatör ekle</b><div class="row" style="margin-top:8px">
+      <input id="mu" placeholder="Kullanıcı adı"><input id="mp" placeholder="Şifre (min 6)">
+      <button id="madd">Ekle</button></div><div id="mmsg" class="msg"></div></div>
+    <div id="mlist"></div>
+  </div>
+</div>
+<script>
+const $=s=>document.querySelector(s);
+let token=sessionStorage.getItem('t'),role=sessionStorage.getItem('r'),uname=sessionStorage.getItem('n');
+async function api(p,method='GET',body){
+  const r=await fetch(p,{method,headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:body?JSON.stringify(body):undefined});
+  if(r.status===401){logout();throw 0;} return r.json();
+}
+function logout(){sessionStorage.clear();location.reload();}
+$('#out').onclick=logout;
+$('#go').onclick=async()=>{
+  const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:$('#u').value,password:$('#p').value})});
+  const j=await r.json(); if(!r.ok){$('#lmsg').textContent=j.error;return;}
+  sessionStorage.setItem('t',j.token);sessionStorage.setItem('r',j.role);sessionStorage.setItem('n',j.name);location.reload();
+};
+function el(tag,txt,cls){const e=document.createElement(tag);if(txt!==undefined)e.textContent=txt;if(cls)e.className=cls;return e;}
+function tab(n){$('#reqs').style.display=n==1?'':'none';$('#mods').style.display=n==2?'':'none';
+  $('#t1').className=n==1?'':'gray';$('#t2').className=n==2?'':'gray';if(n==2)loadMods();}
+$('#t1').onclick=()=>tab(1);$('#t2').onclick=()=>tab(2);
+
+async function decide(id,status){await api('/api/requests/'+id+'/decision','POST',{status});loadReqs();}
+async function loadReqs(){
+  const list=await api('/api/requests'); const box=$('#reqs'); box.replaceChildren();
+  if(!list.length)box.append(el('p','Henüz başvuru yok.','msg'));
+  for(const r of list){
+    const c=el('div',undefined,'card'); const h=el('div'); h.append(el('b',r.name));
+    h.append(el('span',r.status==='approved'?'Onaylı':r.status==='rejected'?'Red':'Bekliyor','badge '+(r.status==='approved'?'b-ok':r.status==='rejected'?'b-no':'b-wait')));
+    if(r.info)h.append(el('span',r.antalya?'📍 Antalya':'⚠️ Antalya değil','badge '+(r.antalya?'b-ok':'b-no')));
+    c.append(h);
+    const m=el('div',undefined,'small');
+    if(r.info){
+      c.append(el('div',[r.city,r.region,r.country].filter(Boolean).join(', ')||'Konum çözülemedi','msg'));
+      m.textContent=`${r.isp||'?'} • ${new Date(r.time).toLocaleString('tr-TR')}`;
+      if(r.vpn)c.append(el('div','⚠️ VPN/proxy/sunucu IP\'si olabilir, konum güvenilmez','small'));
+      if(r.mobile)c.append(el('div','📱 Mobil veri: konum il olarak yanlış çıkabilir','small'));
+    } else {
+      m.textContent=`Bilgiler silindi • ${new Date(r.time).toLocaleString('tr-TR')}${r.by?' • '+r.by:''}`;
+    }
+    c.append(m);
+    const row=el('div',undefined,'row');row.style.marginTop='8px';
+    const ok=el('button','Onayla','ok');ok.onclick=()=>decide(r.id,'approved');
+    const no=el('button','Reddet','no');no.onclick=()=>decide(r.id,'rejected');
+    row.append(ok,no);
+    if(role==='admin'){const d=el('button','Sil','gray');d.onclick=async()=>{await api('/api/requests/'+r.id,'DELETE');loadReqs();};row.append(d);}
+    c.append(row);box.append(c);
+  }
+}
+async function loadMods(){
+  const l=await api('/api/mods');const b=$('#mlist');b.replaceChildren();
+  for(const u of l){const c=el('div',undefined,'card bar');c.append(el('span',u));
+    const d=el('button','Kaldır','no');d.onclick=async()=>{await api('/api/mods/'+encodeURIComponent(u),'DELETE');loadMods();};c.append(d);b.append(c);}
+}
+$('#madd').onclick=async()=>{
+  const j=await api('/api/mods','POST',{username:$('#mu').value,password:$('#mp').value});
+  $('#mmsg').textContent=j.error||'Eklendi.';if(!j.error){$('#mu').value=$('#mp').value='';loadMods();}
+};
+if(token){
+  $('#login').style.display='none';$('#app').style.display='';
+  $('#who').textContent=(role==='admin'?'Admin: ':'Moderatör: ')+uname;
+  if(role!=='admin')$('#t2').style.display='none';
+  loadReqs();setInterval(()=>{if(!document.hidden)loadReqs();},15000);
+}
+</script></body></html>
